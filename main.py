@@ -6,7 +6,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 GRID_SIZE = 20
 CELL_SIZE = 30
-NEW_IDEA_EVERY = 100
+NEW_IDEA_EVERY = 3
 
 class Cell:
     def __init__(self):
@@ -20,7 +20,8 @@ class Cell:
 
     def influence(self, neighbor):
         for view, strength in self.worldviews.items():
-            influence_strength = (strength / 10) * ((self.charisma / 10) ** 2)
+            # FIXME: nomrmalize
+            influence_strength = ((strength / 10) * (self.charisma * 2 / 10) / 2)
             if view not in neighbor.worldviews:
                 if random.random() < influence_strength:
                     neighbor.worldviews[view] = 1
@@ -61,7 +62,16 @@ def introduce_new_idea(grid, existing_views):
     if not new_views:
         return
     new_view = random.choice(new_views)
-    x, y = random.randint(0, GRID_SIZE - 1), random.randint(0, GRID_SIZE - 1)
+    # TODO: places with no ideas first
+    no_views = []
+    for x in range(GRID_SIZE):
+        for y in range(GRID_SIZE):
+            if len(grid[x][y].worldviews) == 0:
+                no_views.append((x, y))
+    if len(no_views) > 0:
+        x, y = no_views[random.randint(0, len(no_views) - 1)]
+    else:
+        x, y = random.randint(0, GRID_SIZE - 1), random.randint(0, GRID_SIZE - 1)
     grid[x][y].worldviews[new_view] = 10
     existing_views.add(new_view)
 
@@ -77,6 +87,8 @@ class SimulationApp:
         self.start_button.pack(side=tk.LEFT)
         self.reset_button = tk.Button(self.control_frame, text="Reset", command=self.reset)
         self.reset_button.pack(side=tk.LEFT)
+        self.next_step_button = tk.Button(self.control_frame, text="One Step", command=self.next_step)
+        self.next_step_button.pack(side=tk.LEFT)
         self.day_label = tk.Label(self.control_frame, text="Day: 0")
         self.day_label.pack(side=tk.LEFT)
         self.tooltip = tk.Label(self.master, text="", bg="lightyellow", relief=tk.SOLID, bd=1)
@@ -92,8 +104,8 @@ class SimulationApp:
         self.grid = [[Cell() for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
         self.day = 0
         self.existing_views = set()
-        introduce_new_idea(self.grid, self.existing_views)
-        introduce_new_idea(self.grid, self.existing_views)
+        for _ in range(2):
+            introduce_new_idea(self.grid, self.existing_views)
         self.running = False
         self.start_button.config(text="Start")
         self.draw_grid()
@@ -107,9 +119,15 @@ class SimulationApp:
         else:
             self.start_button.config(text="Start")
 
+    def next_step(self):
+        self.do_one_step()
+
     def step_simulation(self):
         if not self.running:
             return
+        self.do_one_step()
+
+    def do_one_step(self):
         self.day += 1
         simulate_day(self.grid)
         if self.day % NEW_IDEA_EVERY == 0:
@@ -128,18 +146,23 @@ class SimulationApp:
                 if view:
                     view_counts[view] += 1
                 color = self.view_color(view)
-                border_width = 3 if cell.charisma > 8 else 1
                 rect = self.canvas.create_rectangle(
                     x * CELL_SIZE, y * CELL_SIZE,
                     (x + 1) * CELL_SIZE, (y + 1) * CELL_SIZE,
-                    fill=color, outline="black", width=border_width
+                    fill=color, outline="black", width=1
                 )
-                strength = sum(cell.worldviews.values()) / 10
-                bar_height = 5
+                dominant_view_strength = cell.worldviews[view] / 10 if view else 0
+                charisma_strenght = cell.charisma / 10
+                bar_height = 3
                 self.canvas.create_rectangle(
                     x * CELL_SIZE, (y + 1) * CELL_SIZE - bar_height,
-                    x * CELL_SIZE + int(CELL_SIZE * strength), (y + 1) * CELL_SIZE,
+                    x * CELL_SIZE + int(CELL_SIZE * dominant_view_strength), (y + 1) * CELL_SIZE,
                     fill="blue", outline="blue"
+                )
+                self.canvas.create_rectangle(
+                    x * CELL_SIZE, (y + 1) * CELL_SIZE - (bar_height)*2,
+                    x * CELL_SIZE + int(CELL_SIZE * charisma_strenght), (y + 1) * CELL_SIZE - bar_height,
+                    fill="red", outline="red"
                 )
                 # Tooltip bindings
                 self.canvas.tag_bind(rect, '<Enter>', lambda e, c=cell: self.show_tooltip(e, c))
